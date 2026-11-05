@@ -1,34 +1,31 @@
-terraform {
-  required_providers {
-    azurerm = {
-      source  = "hashicorp/azurerm"
-      version = "~> 3.0"
-    }
-  }
-}
+trigger:
+  - main
 
-provider "azurerm" {
-  features {}
-}
+pool:
+  vmImage: 'ubuntu-latest'
 
-# Resource Group
-resource "azurerm_resource_group" "rg" {
-  name     = "just-network-rg"
-  location = "East US"
-}
+variables:
+  azureServiceConnection: 'azure-free-conn'
 
-# Virtual Network (VNet)
-resource "azurerm_virtual_network" "vnet" {
-  name                = "simple-vnet"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-  address_space       = ["10.0.0.0/16"]
-}
+stages:
+  - stage: Network_Deploy
+    displayName: 'Deploy Only Network'
+    jobs:
+      - job: Terraform_Apply
+        steps:
+          - task: AzureCLI@2
+            displayName: 'Install Terraform and Apply Network'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                # 1. டெராஃபார்மை இன்ஸ்டால் செய்கிறோம்
+                sudo apt-get update && sudo apt-get install -y gnupg software-properties-common
+                wget -O- https://hashicorp.com | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
+                echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+                sudo apt-get update && sudo apt-get install terraform -y
 
-# Subnet
-resource "azurerm_subnet" "subnet" {
-  name                 = "simple-subnet"
-  resource_group_name  = azurerm_resource_group.rg.name
-  virtual_network_name = azurerm_virtual_network.vnet.name
-  address_prefixes     = ["10.0.1.0/24"]
-}
+                # 2. டெராஃபார்மை இயக்குகிறோம்
+                terraform init
+                terraform apply -auto-approve
