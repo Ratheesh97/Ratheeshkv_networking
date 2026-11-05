@@ -26,6 +26,9 @@ stages:
                 echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
                 sudo apt-get update && sudo apt-get install terraform -y
 
-                # 2. டெராஃபார்மை இயக்குகிறோம்
+                # 2. உங்கள் ஃபைல் இருக்கும் ஃபோல்டருக்குள் நுழைகிறோம் (இங்கு உங்கள் ஃபோல்டர் பெயரை மாற்றவும்)
+                cd networking
+
+                # 3. டெராஃபார்மை இயக்குகிறோம்
                 terraform init
                 terraform apply -auto-approve
