@@ -5,7 +5,7 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  azureServiceConnection: 'Your-Azure-Service-Connection-Name'
+  azureServiceConnection: 'azure-free-conn'
 
 stages:
   - stage: Network_Deploy
