@@ -1,0 +1,5 @@
+- task: TerraformTaskV4@4
+  inputs:
+    provider: 'azurerm'
+    command: 'apply'
+    environmentServiceNameAzureRM: 'Your-Azure-Service-Connection'
