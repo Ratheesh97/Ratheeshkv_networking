@@ -13,7 +13,7 @@ stages:
     jobs:
       - job: Terraform_Apply
         steps:
-          # 1. உபுண்டுவின் அதிகாரப்பூர்வ ஸ்டோரில் இருந்து நேரடியாக டெராஃபார்ம் இன்ஸ்டால் செய்கிறோம் (இது எரர் தராது)
+          # 1. எரர் தராத எளிய முறையில் டெராஃபார்ம் இன்ஸ்டால் செய்கிறோம்
           - script: |
               sudo snap install terraform --classic
               terraform --version
@@ -27,8 +27,5 @@ stages:
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
-                # ஒருவேளை உங்கள் main.tf ஃபைல் 'networking' ஃபோல்டரில் இருந்தால் கீழே உள்ள வரியின் # குறியீட்டை நீக்கவும்
-                # cd networking
-                
                 terraform init
                 terraform apply -auto-approve
