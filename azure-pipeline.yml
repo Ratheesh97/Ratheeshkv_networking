@@ -6,26 +6,151 @@ pool:
 
 variables:
   azureServiceConnection: 'azure-free-conn'
+  # உங்கள் ACR பெயரைக் கீழே மாற்றிக் கொள்ளுங்கள் (உலகளாவிய தனித்துவமான பெயர் இருக்க வேண்டும்)
+  acrName: 'ratheeshkumarvetriacr2026'
+  imageRepository: 'my-web-app'
+  tag: '$(Build.BuildId)'
 
 stages:
-  - stage: Network_Deploy
-    displayName: 'Deploy Only Network'
+  # STAGE 1: Infrastructure Deployment (Network, ACR, AKS)
+  - stage: Infra_Deploy
+    displayName: '1. Infrastructure Setup'
     jobs:
       - job: Terraform_Apply
         steps:
-          # 1. எரர் தராத எளிய முறையில் டெராஃபார்ம் இன்ஸ்டால் செய்கிறோம்
+          # பைப்லைனே தானாக முழு Terraform ஃபைலையும் உருவாக்கும்
+          - script: |
+              cat << 'EOF' > main.tf
+              terraform {
+                required_providers {
+                  azurerm = {
+                    source  = "hashicorp/azurerm"
+                    version = "~> 3.0"
+                  }
+                }
+              }
+
+              provider "azurerm" {
+                features {}
+              }
+
+              # 1. Resource Group
+              resource "azurerm_resource_group" "rg" {
+                name     = "just-network-rg"
+                location = "East US"
+              }
+
+              # 2. Virtual Network
+              resource "azurerm_virtual_network" "vnet" {
+                name                = "simple-vnet"
+                location            = azurerm_resource_group.rg.location
+                resource_group_name = azurerm_resource_group.rg.name
+                address_space       = ["10.0.0.0/16"]
+              }
+
+              # 3. Subnet (இதற்குள் தான் AKS அமையும்)
+              resource "azurerm_subnet" "subnet" {
+                name                 = "simple-subnet"
+                resource_group_name  = azurerm_resource_group.rg.name
+                virtual_network_name = azurerm_virtual_network.vnet.name
+                address_prefixes     = ["10.0.1.0/24"]
+              }
+
+              # 4. Azure Container Registry (ACR)
+              resource "azurerm_container_registry" "acr" {
+                name                = "${var.acr_name}"
+                resource_group_name = azurerm_resource_group.rg.name
+                location            = azurerm_resource_group.rg.location
+                sku                 = "Standard"
+                admin_enabled       = true
+              }
+
+              # 5. Azure Kubernetes Service (AKS)
+              resource "azurerm_kubernetes_cluster" "aks" {
+                name                = "simple-aks-cluster"
+                location            = azurerm_resource_group.rg.location
+                resource_group_name = azurerm_resource_group.rg.name
+                dns_prefix          = "simpleaks"
+
+                default_node_pool {
+                  name           = "default"
+                  node_count     = 1
+                  vm_size        = "Standard_B2s" # Free Account-க்கு ஏற்ற குறைந்த விலை VM
+                  vnet_subnet_id = azurerm_subnet.subnet.id
+                }
+
+                identity {
+                  type = "SystemAssigned"
+                }
+              }
+
+              # 6. AKS-க்கு ACR-ல் இருந்து இமேஜை எடுக்க அனுமதி வழங்குதல்
+              resource "azurerm_role_assignment" "acr_pull" {
+                principal_id                     = azurerm_kubernetes_cluster.aks.kubelet_identity[0].object_id
+                role_definition_name             = "AcrPull"
+                scope                            = azurerm_container_registry.acr.id
+                skip_service_principal_aad_check = true
+              }
+
+              variable "acr_name" {
+                type    = string
+              }
+              EOF
+            displayName: 'Create Combined Terraform Configuration'
+
           - script: |
               sudo snap install terraform --classic
-              terraform --version
-            displayName: 'Install Terraform via Snap'
+            displayName: 'Install Terraform'
 
-          # 2. Azure CLI டாஸ்க் மூலம் டெராஃபார்ம் ரன் செய்கிறோம்
           - task: AzureCLI@2
-            displayName: 'Terraform Init and Apply'
+            displayName: 'Terraform Run'
             inputs:
               azureSubscription: '$(azureServiceConnection)'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
                 terraform init
-                terraform apply -auto-approve
+                terraform apply -var="acr_name=$(acrName)" -auto-approve
+
+  # STAGE 2: Build App Image & Deploy to AKS
+  - stage: App_Deploy
+    displayName: '2. Live Application Setup'
+    dependsOn: Infra_Deploy
+    jobs:
+      - job: Docker_And_Kubernetes
+        steps:
+          # ஒரு எளிய Sample HTML ஃபைல் மற்றும் Dockerfile-ஐ பைப்லைனே உருவாக்கும்
+          - script: |
+              echo "<h1>Welcome to Ratheesh Live Web App via AKS!</h1>" > index.html
+              cat << 'EOF' > Dockerfile
+              FROM nginx:alpine
+              COPY index.html /usr/share/nginx/html/
+              EOF
+            displayName: 'Create Sample App & Dockerfile'
+
+          # Docker இமேஜை பில்ட் செய்து ACR-க்கு அனுப்புதல் மற்றும் AKS-ல் ஹோஸ்ட் செய்தல்
+          - task: AzureCLI@2
+            displayName: 'Docker Build, Push and AKS Live Host'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                # 1. ACR Login
+                az acr login --name $(acrName)
+
+                # 2. Docker Build & Push
+                docker build -t $(acrName).azurecr.io/$(imageRepository):$(tag) .
+                docker push $(acrName).azurecr.io/$(imageRepository):$(tag)
+
+                # 3. AKS-க்கு கனெக்ட் செய்தல்
+                az aks get-credentials --resource-group just-network-rg --name simple-aks-cluster --overwrite-existing
+
+                # 4. அப்ளிகேஷனை லைவ் ஹோஸ்ட் செய்தல் (Kubernetes Deployment & Service)
+                kubectl create deployment my-web-app --image=$(acrName).azurecr.io/$(imageRepository):$(tag) --dry-run=client -o yaml | kubectl apply -f -
+                kubectl expose deployment my-web-app --type=LoadBalancer --port=80 --target-port=80 --dry-run=client -o yaml | kubectl apply -f -
+                
+                # 5. லைவ் ஐபி (External IP) வரும் வரை காத்திருத்தல்
+                echo "உங்களுடைய லைவ் அப்ளிகேஷன் ஐபி அட்ரஸை (Public IP) தேடுகிறது..."
+                sleep 40
+                kubectl get service my-web-app
