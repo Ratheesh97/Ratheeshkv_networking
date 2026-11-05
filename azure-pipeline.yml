@@ -13,13 +13,22 @@ stages:
     jobs:
       - job: Terraform_Apply
         steps:
-          # 1. எக்ஸ்டென்ஷன் இல்லாமல் நேரடியாக டெராஃபார்ம் ரன் செய்யும் எளிய வழி
+          # 1. உபுண்டுவின் அதிகாரப்பூர்வ ஸ்டோரில் இருந்து நேரடியாக டெராஃபார்ம் இன்ஸ்டால் செய்கிறோம் (இது எரர் தராது)
+          - script: |
+              sudo snap install terraform --classic
+              terraform --version
+            displayName: 'Install Terraform via Snap'
+
+          # 2. Azure CLI டாஸ்க் மூலம் டெராஃபார்ம் ரன் செய்கிறோம்
           - task: AzureCLI@2
-            displayName: 'Terraform Init and Apply via Azure CLI Task'
+            displayName: 'Terraform Init and Apply'
             inputs:
               azureSubscription: '$(azureServiceConnection)'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
+                # ஒருவேளை உங்கள் main.tf ஃபைல் 'networking' ஃபோல்டரில் இருந்தால் கீழே உள்ள வரியின் # குறியீட்டை நீக்கவும்
+                # cd networking
+                
                 terraform init
                 terraform apply -auto-approve
